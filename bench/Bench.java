@@ -173,7 +173,7 @@ public class Bench {
                 .append(String.format(Locale.ROOT, "Average per case: %.0f s in the model, %.0f s in total.%n%n", avgModel, avgWall));
         sb.append("| Case | Bug | Result | Attempts | Model | Hidden tests | Total |\n|---|---|---|---|---|---|---|\n");
         for (CaseResult r : results) {
-            String result = r.real() ? "real fix" : r.status().equals("FIXED") ? "**overfit**" : r.status().toLowerCase(Locale.ROOT).replace('_', ' ');
+            String result = r.real() ? "real fix" : r.status().equals("FIXED") ? "**incomplete**" : r.status().toLowerCase(Locale.ROOT).replace('_', ' ');
             sb.append(String.format(Locale.ROOT, "| %s | %s | %s | %d | %.0f s | %s | %.0f s |%n",
                     r.id(), r.bug(), result, r.attempts(), r.modelSeconds(),
                     r.hiddenTotal() == 0 ? "-" : (r.hiddenTotal() - r.hiddenFailed()) + "/" + r.hiddenTotal(),
