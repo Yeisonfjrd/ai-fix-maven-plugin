@@ -1,0 +1,69 @@
+package io.github.yeisonfjrd.aifix;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class ContextTest {
+
+    @TempDir Path dir;
+
+    @Test
+    void leeLasFallasDeSurefire() throws Exception {
+        write("target/surefire-reports/TEST-shop.CartTest.xml", """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <testsuite name="shop.CartTest" tests="2" failures="1" errors="0">
+                  <testcase name="total" classname="shop.CartTest" time="0.01"/>
+                  <testcase name="discount()" classname="shop.CartTest" time="0.01">
+                    <failure message="expected: &lt;90&gt; but was: &lt;80&gt;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: expected: &lt;90&gt; but was: &lt;80&gt;
+                	at shop.CartTest.discount(CartTest.java:12)</failure>
+                  </testcase>
+                </testsuite>
+                """);
+        write("target/surefire-reports/shop.CartTest.txt", "no es un reporte");
+        List<TestFailure> failures = SurefireReports.read(dir.resolve("target/surefire-reports"));
+        assertThat(failures).hasSize(1);
+        assertThat(failures.get(0).selector()).isEqualTo("shop.CartTest#discount");
+        assertThat(failures.get(0).message()).isEqualTo("expected: <90> but was: <80>");
+    }
+
+    @Test
+    void sospechosos_porElStackTraceYPorLoQueUsaElTest() throws Exception {
+        write("src/main/java/shop/Cart.java", "package shop; public class Cart {}");
+        write("src/main/java/shop/Pricing.java", "package shop; public class Pricing {}");
+        write("src/main/java/shop/Unrelated.java", "package shop; public class Unrelated {}");
+        write("src/test/java/shop/CartTest.java", """
+                package shop;
+                class CartTest {
+                    @org.junit.jupiter.api.Test
+                    void discount() {
+                        Cart cart = new Cart();
+                    }
+                }
+                """);
+        TestFailure f = new TestFailure("shop.CartTest", "discount", "boom",
+                "java.lang.IllegalStateException: boom\n\tat shop.Pricing.apply(Pricing.java:3)\n\tat shop.CartTest.discount(CartTest.java:5)");
+        SourceContext ctx = new SourceContext(dir);
+        assertThat(ctx.suspects(List.of(f)))
+                .extracting(p -> p.getFileName().toString())
+                .containsExactly("Pricing.java", "Cart.java");
+        String rendered = ctx.render(List.of(f));
+        assertThat(rendered).contains("void discount()").contains("FILE: src/main/java/shop/Pricing.java").doesNotContain("Unrelated");
+    }
+
+    @Test
+    void elStackTraceSinRuidoDeJUnit() {
+        String trace = "AssertionFailedError: x\n\tat org.junit.jupiter.api.Assertions.fail(A.java:1)\n\tat shop.CartTest.t(CartTest.java:5)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:580)";
+        assertThat(SourceContext.trimTrace(trace)).isEqualTo("AssertionFailedError: x\n\tat shop.CartTest.t(CartTest.java:5)");
+    }
+
+    private void write(String rel, String content) throws Exception {
+        Path p = dir.resolve(rel);
+        Files.createDirectories(p.getParent());
+        Files.writeString(p, content);
+    }
+}
