@@ -1,0 +1,1 @@
+Collections: removing by index while looping skips the next element.

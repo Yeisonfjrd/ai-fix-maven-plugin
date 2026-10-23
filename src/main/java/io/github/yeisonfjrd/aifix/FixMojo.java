@@ -50,6 +50,7 @@ public class FixMojo extends AbstractMojo {
                     Math.max(1, attempts),
                     getLog()::info);
             FixLoop.Outcome outcome = loop.run();
+            writeReport(dir, outcome);
             switch (outcome.status()) {
                 case NOTHING_TO_FIX -> {}
                 case FIXED -> {
@@ -79,6 +80,20 @@ public class FixMojo extends AbstractMojo {
             revertQuietly(applier);
             throw e;
         }
+    }
+
+    /** target/ai-fix-report.json: el resultado para máquinas (CI, el benchmark), sin leer la consola. */
+    private void writeReport(Path dir, FixLoop.Outcome outcome) throws IOException {
+        var report = new java.util.LinkedHashMap<String, Object>();
+        report.put("status", outcome.status().name());
+        report.put("model", model);
+        report.put("attempts", outcome.attempts());
+        report.put("modelSeconds", outcome.modelTime().toMillis() / 1000.0);
+        report.put("testSeconds", outcome.testTime().toMillis() / 1000.0);
+        report.put("diff", outcome.diff());
+        Path file = dir.resolve("target/ai-fix-report.json");
+        java.nio.file.Files.createDirectories(file.getParent());
+        new com.fasterxml.jackson.databind.ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(file.toFile(), report);
     }
 
     /** Si algo explota a mitad de un intento, el código no puede quedar a medio cambiar. */

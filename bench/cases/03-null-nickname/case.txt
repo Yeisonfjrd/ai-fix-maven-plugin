@@ -1,0 +1,1 @@
+NullPointerException: a user without a nickname breaks the display name.
