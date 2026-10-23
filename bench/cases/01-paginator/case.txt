@@ -1,0 +1,1 @@
+Off-by-one: each page drops its last item.

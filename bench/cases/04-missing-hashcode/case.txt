@@ -1,0 +1,1 @@
+equals without hashCode: equal coordinates are not equal inside a HashSet.

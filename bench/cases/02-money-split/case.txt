@@ -1,0 +1,1 @@
+Integer division: splitting money loses the remainder cents.

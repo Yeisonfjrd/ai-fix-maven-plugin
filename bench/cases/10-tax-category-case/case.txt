@@ -1,0 +1,1 @@
+Bug in another class: the tax table is case-sensitive, the test only uses Invoice.

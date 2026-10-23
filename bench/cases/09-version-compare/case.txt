@@ -1,0 +1,1 @@
+Comparison: versions compared as text put 1.10 before 1.9.
