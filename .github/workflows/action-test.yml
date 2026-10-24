@@ -1,0 +1,34 @@
+# Prueba la Action de punta a punta en un runner real de GitHub: examples/shop tiene un bug a propósito
+# (el subtotal ignora la cantidad). ai-fix tiene que arreglarlo con el modelo chico y abrir un PR.
+name: Action self-test
+
+on:
+  pull_request:
+    paths:
+      - action.yml
+      - action/**
+      - src/main/**
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ai-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - id: fix
+        uses: ./
+        with:
+          working-directory: examples/shop
+      - name: Check the result
+        env:
+          STATUS: ${{ steps.fix.outputs.status }}
+          PR: ${{ steps.fix.outputs.pull-request }}
+        run: |
+          echo "status=$STATUS pr=$PR"
+          test "$STATUS" = "FIXED"

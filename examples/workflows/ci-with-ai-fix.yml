@@ -1,0 +1,38 @@
+# Copy this to .github/workflows/ci.yml in a Maven project.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: write        # push the ai-fix/* branch
+  pull-requests: write   # open the pull request
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: mvn -B test
+
+  ai-fix:
+    needs: test
+    # Only when the tests failed, never on its own ai-fix/* branches, and never on pull requests from forks.
+    if: >-
+      failure()
+      && !startsWith(github.head_ref || github.ref_name, 'ai-fix/')
+      && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    # Private repo: your own machine (self-hosted runner with Ollama, big model).
+    # Public repo: a free GitHub runner (small model on the CPU).
+    runs-on: ${{ github.event.repository.private && 'self-hosted' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: Yeisonfjrd/ai-fix-maven-plugin@main

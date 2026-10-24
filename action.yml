@@ -1,0 +1,109 @@
+name: ai-fix
+description: When Java tests fail, ask a local model (Ollama) for a fix to src/main and open a pull request only if every test passes.
+author: Yeison Fajardo
+branding:
+  icon: tool
+  color: purple
+
+inputs:
+  model:
+    description: >
+      Ollama model. "auto" picks qwen3-coder:30b on a self-hosted runner (your machine, with a GPU)
+      and qwen2.5-coder:7b on a GitHub-hosted runner (CPU only).
+    default: auto
+  attempts:
+    description: Attempts before giving up. A failed attempt is reverted before the next one.
+    default: "3"
+  java-version:
+    description: Java version for the project and the plugin.
+    default: "21"
+  working-directory:
+    description: Folder with the pom.xml.
+    default: .
+  base-branch:
+    description: Branch the fix pull request targets. Empty means the branch whose tests failed.
+    default: ""
+  token:
+    description: >
+      Token to push the fix branch and open the pull request. The default GITHUB_TOKEN works, but
+      pull requests it opens do not trigger other workflows; use a fine-grained token if you want CI on them.
+    default: ${{ github.token }}
+
+outputs:
+  status:
+    description: FIXED, NOT_FIXED, NOTHING_TO_FIX, DOES_NOT_COMPILE or SKIPPED.
+    value: ${{ steps.fix.outputs.status }}
+  pull-request:
+    description: URL of the pull request with the fix, if one was opened.
+    value: ${{ steps.pr.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java-version }}
+        cache: maven
+
+    - name: Pick the model
+      id: model
+      shell: bash
+      env:
+        MODEL: ${{ inputs.model }}
+      run: |
+        if [ "$MODEL" = "auto" ]; then
+          if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then MODEL="qwen3-coder:30b"; else MODEL="qwen2.5-coder:7b"; fi
+        fi
+        echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+        echo "ai-fix will use $MODEL ($RUNNER_ENVIRONMENT runner)"
+
+    - name: Install the ai-fix plugin
+      shell: bash
+      run: |
+        # The action carries the plugin's source: no need to publish it anywhere.
+        cd "$GITHUB_ACTION_PATH"
+        ./mvnw -B -q install -DskipTests
+
+    - name: Cache Ollama models
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@v4
+      with:
+        path: ~/.ollama/models
+        key: ollama-${{ runner.os }}-${{ steps.model.outputs.model }}
+
+    - name: Start Ollama
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/action/ollama.sh" "${{ steps.model.outputs.model }}"
+
+    - name: Run ai-fix
+      id: fix
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        MODEL: ${{ steps.model.outputs.model }}
+        ATTEMPTS: ${{ inputs.attempts }}
+      run: bash "$GITHUB_ACTION_PATH/action/fix.sh"
+
+    - name: Keep the transcript
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ai-fix-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |
+          ${{ inputs.working-directory }}/target/ai-fix-report.json
+          ${{ inputs.working-directory }}/target/ai-fix-transcript.md
+          ${{ inputs.working-directory }}/target/ai-fix-console.log
+        if-no-files-found: ignore
+
+    - name: Open the pull request
+      id: pr
+      if: steps.fix.outputs.status == 'FIXED'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        MODEL: ${{ steps.model.outputs.model }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+      run: bash "$GITHUB_ACTION_PATH/action/open-pr.sh"
