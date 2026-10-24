@@ -1,11 +1,33 @@
-# ai-fix · Maven plugin
+# ai-fix for Maven
 
-`mvn ai-fix:fix` runs your tests and, if some fail, asks a local model (Ollama) for a fix to `src/main/java`. It keeps the fix only if the whole test suite passes; otherwise the code is left exactly as it was. No API key, no cost, the code never leaves your machine.
+When your Java tests fail, ai-fix asks a **local** model (Ollama) for a fix to `src/main/java` and keeps it only if **every** test passes. In CI it opens a pull request with the fix; on your machine it's one command. No API key, no cost, your code never leaves the runner.
 
-Java 21 · Maven plugin API · JavaParser · Ollama (default model `qwen3-coder:30b`).
+- **Tests are off limits.** It can only change existing files under `src/main/java`, so it can't "fix" a test to make it pass.
+- **Measured, not promised.** A benchmark of 10 Java bugs with hidden tests the model never sees: 9/10 real fixes with `qwen3-coder:30b`, 6/10 with a 7B model on a free GitHub runner ([details](#benchmark)).
+- **Nothing half-done.** A failed attempt is reverted; if it can't fix it, your code stays exactly as it was.
+
+```yaml
+# .github/workflows/ci.yml, after your test job
+  ai-fix:
+    needs: test
+    if: failure() && !startsWith(github.head_ref || github.ref_name, 'ai-fix/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: Yeisonfjrd/ai-fix-maven-plugin@v1
+```
+
+Requirements: a Maven project with JUnit tests (Surefire reports), Java 21 on the runner (the action installs it; your project can target an older `release`), and *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests*. For a fixed, unchangeable version pin a commit SHA instead of `@v1`.
+
+Java 21 · Maven plugin API · JavaParser · Ollama (default model `qwen3-coder:30b` on your machine, `qwen2.5-coder:7b` on GitHub runners).
 
 ```
-$ mvn io.github.yeisonfjrd:ai-fix-maven-plugin:0.1.0-SNAPSHOT:fix
+$ mvn io.github.yeisonfjrd:ai-fix-maven-plugin:1.0.0:fix
 Fallan 3 test(s): shop.CartTest#discountAppliesFromTheThreshold, ...
 Intento 1/3: pidiendo un arreglo al modelo…
   los tests que fallaban ya pasan; corriendo todos para ver que no se rompió otra cosa…
@@ -30,7 +52,7 @@ That is a real run on [`examples/shop`](examples/shop), a cart whose subtotal ig
 ```bash
 ./mvnw install                       # installs the plugin in ~/.m2
 cd examples/shop
-./mvnw io.github.yeisonfjrd:ai-fix-maven-plugin:0.1.0-SNAPSHOT:fix
+./mvnw io.github.yeisonfjrd:ai-fix-maven-plugin:1.0.0:fix
 ```
 
 Needs [Ollama](https://ollama.com) running with the model pulled (`ollama pull qwen3-coder:30b`).
@@ -51,7 +73,7 @@ Nobody remembers to run a fix command, so the same loop also runs in CI. When th
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref || github.ref_name }}
-      - uses: Yeisonfjrd/ai-fix-maven-plugin@main
+      - uses: Yeisonfjrd/ai-fix-maven-plugin@v1
 ```
 
 Full workflow: [examples/workflows/ci-with-ai-fix.yml](examples/workflows/ci-with-ai-fix.yml).
