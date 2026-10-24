@@ -22,11 +22,25 @@ public final class OllamaClient {
 
     private final URI url;
     private final String model;
+    private final Map<String, Object> options;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     public OllamaClient(String baseUrl, String model) {
+        this(baseUrl, model, null, null);
+    }
+
+    /**
+     * `numGpu` = 0 corre todo en el procesador y `numThread` limita los núcleos: sirve para medir
+     * en la notebook cómo andaría en un servidor de GitHub (sin placa de video, 4 núcleos).
+     */
+    public OllamaClient(String baseUrl, String model, Integer numGpu, Integer numThread) {
         this.url = URI.create(baseUrl.replaceAll("/$", "") + "/api/chat");
         this.model = model;
+        // Temperatura baja: queremos el arreglo más probable, no creatividad.
+        Map<String, Object> opts = new java.util.LinkedHashMap<>(Map.of("temperature", 0.2, "num_ctx", 32768));
+        if (numGpu != null) opts.put("num_gpu", numGpu);
+        if (numThread != null) opts.put("num_thread", numThread);
+        this.options = Map.copyOf(opts);
     }
 
     public Reply chat(List<Message> messages) throws IOException, InterruptedException {
@@ -34,8 +48,7 @@ public final class OllamaClient {
                 "model", model,
                 "messages", messages,
                 "stream", false,
-                // Temperatura baja: queremos el arreglo más probable, no creatividad.
-                "options", Map.of("temperature", 0.2, "num_ctx", 32768)));
+                "options", options));
         HttpRequest request = HttpRequest.newBuilder(url)
                 .timeout(Duration.ofMinutes(15))
                 .header("Content-Type", "application/json")

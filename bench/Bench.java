@@ -19,7 +19,8 @@ import java.util.stream.Stream;
  * que nunca ve). Un arreglo cuenta como real solo si además pasan los ocultos.
  *
  *   java bench/Bench.java --check              verifica el benchmark: el bug falla, el arreglo de referencia pasa todo
- *   java bench/Bench.java [--model M] [caso…]  corre ai-fix en cada caso y escribe bench/results/<modelo>.md
+ *   java bench/Bench.java [--model M] [--label L] [caso…]  corre ai-fix y escribe bench/results/<modelo>[.L].md
+ *   java -Daifix.numGpu=0 -Daifix.numThread=4 bench/Bench.java …   simula un servidor de GitHub (sin GPU, 4 núcleos)
  *
  * Antes: ./mvnw install (para que Maven encuentre el plugin).
  */
@@ -38,11 +39,13 @@ public class Bench {
     public static void main(String[] args) throws Exception {
         boolean check = false;
         String model = "qwen3-coder:30b";
+        String label = "";
         List<String> only = new ArrayList<>();
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--check" -> check = true;
                 case "--model" -> model = args[++i];
+                case "--label" -> label = args[++i];
                 default -> only.add(args[i]);
             }
         }
@@ -63,7 +66,8 @@ public class Bench {
                     r.id(), r.status(), r.attempts(), r.modelSeconds(), r.real() ? "sí" : "no",
                     r.hiddenTotal() - r.hiddenFailed(), r.hiddenTotal(), r.wall().toMillis() / 1000.0);
         }
-        Path out = ROOT.resolve("results").resolve(model.replaceAll("[^\\w.-]", "_") + ".md");
+        String name = model.replaceAll("[^\\w.-]", "_") + (label.isBlank() ? "" : "." + label);
+        Path out = ROOT.resolve("results").resolve(name + ".md");
         Files.createDirectories(out.getParent());
         Files.writeString(out, report(model, results), StandardCharsets.UTF_8);
         System.out.println("\nResultados: " + out);
@@ -97,7 +101,7 @@ public class Bench {
         String bug = Files.readString(c.resolve("case.txt")).strip();
         Path work = prepare(c, id, false, false);
         long start = System.nanoTime();
-        mvn(work, PLUGIN, "-Daifix.model=" + model);
+        mvn(work, pluginGoals(model).toArray(String[]::new));
         Path reportFile = work.resolve("target/ai-fix-report.json");
         String report = Files.exists(reportFile) ? Files.readString(reportFile) : "";
         String status = field(report, "status", "ERROR");
@@ -116,6 +120,21 @@ public class Bench {
         }
         Duration wall = Duration.ofNanos(System.nanoTime() - start);
         return new CaseResult(id, bug, status, attempts, modelSeconds, real, hidden[0], hidden[1], wall, diff);
+    }
+
+    /** Las opciones -Daifix.* que recibe el benchmark van al plugin (ej: -Daifix.numGpu=0 -Daifix.numThread=4). */
+    static List<String> pluginGoals(String model) {
+        List<String> goals = new ArrayList<>(List.of(PLUGIN, "-Daifix.model=" + model));
+        goals.addAll(pluginOptions().stream().map(o -> "-D" + o).toList());
+        return goals;
+    }
+
+    static List<String> pluginOptions() {
+        return System.getProperties().stringPropertyNames().stream()
+                .filter(k -> k.startsWith("aifix.") && !k.equals("aifix.model"))
+                .sorted()
+                .map(k -> k + "=" + System.getProperty(k))
+                .toList();
     }
 
     /** Copia el proyecto base y el caso a target/bench/<nombre>. */
@@ -168,6 +187,7 @@ public class Bench {
         double avgWall = results.stream().mapToLong(r -> r.wall().toMillis()).average().orElse(0) / 1000.0;
         StringBuilder sb = new StringBuilder();
         sb.append("# ai-fix benchmark · ").append(model).append("\n\n");
+        if (!pluginOptions().isEmpty()) sb.append("Options: `").append(String.join(" ", pluginOptions())).append("`\n\n");
         sb.append("Run on ").append(LocalDate.now()).append(". ")
                 .append(String.format(Locale.ROOT, "**%d/%d fixed** (visible tests green), **%d/%d real fixes** (hidden tests green too). ", fixed, results.size(), real, results.size()))
                 .append(String.format(Locale.ROOT, "Average per case: %.0f s in the model, %.0f s in total.%n%n", avgModel, avgWall));

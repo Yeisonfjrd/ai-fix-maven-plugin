@@ -19,7 +19,7 @@ That is a real run on [`examples/shop`](examples/shop), a cart whose subtotal ig
 ## How it works
 
 1. **Run the tests** in a separate Maven process (the project's `mvnw` if it has one) and read the failures from the Surefire XML reports, not from the console.
-2. **Build the context.** Only the failing test methods (extracted with JavaParser, not whole files), their trimmed stack traces, and the `src/main` classes that are suspects: the ones in the stack trace and the ones the test uses.
+2. **Build the context.** Only the failing test methods (extracted with JavaParser, not whole files), their trimmed stack traces, and the `src/main` classes that are suspects: the ones in the stack trace, the ones the test uses, and one level more (the classes those suspects use).
 3. **Ask for search/replace blocks**, not a line-numbered diff: small models miscount lines but copy code well.
 4. **Rules enforced by code, not by the prompt:** only existing `.java` files under `src/main/java` can change (tests are off limits, so the model cannot "fix" a test), every SEARCH must match exactly once, and either all edits of an answer apply or none does.
 5. **Verify.** Rerun the failing tests, then the whole suite to catch regressions. A failed attempt is reverted before the next one, so every attempt starts from the original code and mistakes do not pile up. The model gets the new failure as feedback.
@@ -43,7 +43,9 @@ Options: `-Daifix.model=qwen3:14b`, `-Daifix.attempts=3`, `-Daifix.dryRun=true` 
 
 With `qwen3-coder:30b` on my laptop (RX 6800M, Ryzen 9 5900HX):
 
-**9/10 fixed, 8/10 real fixes, 41 s of model time per bug on average.**
+**10/10 fixed, 9/10 real fixes, 19 s of model time per bug on average.**
+
+The first run gave 9/10 fixed and 8/10 real. Case 10 failed because the context only had the classes the test touches; adding the `src/main` classes those suspects use fixed it on the first attempt, with no other case getting worse. Both runs are in [bench/results](bench/results). (The time also dropped, but part of that is the model already being loaded, so I would not credit the change for it.)
 
 | Case | Bug | Result |
 |---|---|---|
@@ -56,12 +58,12 @@ With `qwen3-coder:30b` on my laptop (RX 6800M, Ryzen 9 5900HX):
 | 07 | static field shared by every counter | real fix |
 | 08 | removing from a list while looping by index | real fix |
 | 09 | versions compared as text | real fix |
-| 10 | bug in `TaxTable`, but the test only uses `Invoice` | **not fixed**: the context only included the classes the test touches, so the model never saw `TaxTable` |
+| 10 | bug in `TaxTable`, but the test only uses `Invoice` | real fix (was not fixed before the context change) |
 
 Full table, timings and every diff: [bench/results/qwen3-coder_30b.md](bench/results/qwen3-coder_30b.md).
 
 ## What's unfinished
 
-- Case 10 shows the main gap: the context should also include the `src/main` classes that the suspects call, not only the ones the test touches.
+- The dependency walk stops at one level, to keep the prompt small. A bug two calls away from what the test touches is still out of reach.
 - Compilation errors are out of scope: if the project does not compile, it stops.
 - On a Windows console the Spanish log can show broken accents, depending on the console code page.

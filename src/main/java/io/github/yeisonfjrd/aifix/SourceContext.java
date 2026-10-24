@@ -61,16 +61,28 @@ public final class SourceContext {
         }
         for (TestFailure f : failures) {
             Path test = testFile(f.className());
-            if (test == null) continue;
-            try {
-                CompilationUnit cu = StaticJavaParser.parse(test);
-                cu.findAll(ClassOrInterfaceType.class).forEach(t -> addBySimpleName(out, t.getNameAsString()));
-                cu.findAll(NameExpr.class).forEach(n -> addBySimpleName(out, n.getNameAsString()));
-            } catch (Exception e) {
-                // Si el test no se puede parsear, quedan solo los sospechosos del stack trace.
-            }
+            if (test != null) out.addAll(referencedMainClasses(test));
+        }
+        // Un nivel más: lo que usan los sospechosos. Si el test toca Invoice y el bug está en la
+        // TaxTable que usa Invoice, el modelo tiene que ver las dos (caso 10 del benchmark).
+        for (Path suspect : List.copyOf(out)) {
+            out.addAll(referencedMainClasses(suspect));
         }
         return out;
+    }
+
+    /** Las clases de src/main que nombra este archivo (tipos y nombres sueltos, como Clase.metodo()). */
+    private Set<Path> referencedMainClasses(Path file) {
+        Set<Path> found = new LinkedHashSet<>();
+        try {
+            CompilationUnit cu = StaticJavaParser.parse(file);
+            cu.findAll(ClassOrInterfaceType.class).forEach(t -> addBySimpleName(found, t.getNameAsString()));
+            cu.findAll(NameExpr.class).forEach(n -> addBySimpleName(found, n.getNameAsString()));
+        } catch (Exception e) {
+            // Si no se puede parsear, no suma sospechosos: quedan los del stack trace.
+        }
+        found.remove(file);
+        return found;
     }
 
     private void addBySimpleName(Set<Path> out, String name) {
