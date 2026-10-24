@@ -144,8 +144,14 @@ public final class FixLoop {
         List<Edit> edits = Edit.parseAll(answer);
         if (!edits.isEmpty()) return edits;
         List<Edit> whole = Edit.parseWholeFiles(answer).stream().filter(e -> applier.isEditable(e.path())).toList();
-        if (!whole.isEmpty()) log.accept("  vino la clase completa en vez de SEARCH/REPLACE: la uso entera");
-        return whole;
+        if (!whole.isEmpty()) {
+            log.accept("  vino la clase completa en vez de SEARCH/REPLACE: la uso entera");
+            return whole;
+        }
+        // Plan C: solo el método corregido, debajo de "FILE: ruta".
+        List<Edit> methods = MethodSnippets.parse(answer, applier.basedir()).stream().filter(e -> applier.isEditable(e.path())).toList();
+        if (!methods.isEmpty()) log.accept("  vino solo el método corregido: reemplazo ese método");
+        return methods;
     }
 
     private static String describe(TestRunner.Result result) {
