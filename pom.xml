@@ -11,6 +11,14 @@
     <packaging>maven-plugin</packaging>
     <name>ai-fix</name>
     <description>Runs your tests, asks a local model for a fix to src/main, keeps it only if the tests pass.</description>
+    <url>https://github.com/Yeisonfjrd/ai-fix-maven-plugin</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/license/mit</url>
+        </license>
+    </licenses>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>

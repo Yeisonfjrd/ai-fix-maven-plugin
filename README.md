@@ -105,3 +105,7 @@ Every run now writes the whole conversation with the model to `target/ai-fix-tra
 - The dependency walk stops at one level, to keep the prompt small. A bug two calls away from what the test touches is still out of reach.
 - Compilation errors are out of scope: if the project does not compile, it stops.
 - On a Windows console the Spanish log can show broken accents, depending on the console code page.
+
+## License
+
+[MIT](LICENSE). The Maven wrapper scripts (`mvnw`, `mvnw.cmd`) keep their Apache-2.0 header from Apache Maven.
