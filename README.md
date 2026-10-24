@@ -43,7 +43,7 @@ Options: `-Daifix.model=qwen3:14b`, `-Daifix.attempts=3`, `-Daifix.dryRun=true` 
 
 With `qwen3-coder:30b` on my laptop (RX 6800M, Ryzen 9 5900HX):
 
-**10/10 fixed, 9/10 real fixes, 19 s of model time per bug on average.**
+**10/10 fixed, 9/10 real fixes, 19–27 s of model time per bug on average** (two runs; the model does not answer the same way every time, case 10 took 1 attempt in one run and 3 in the other).
 
 The first run gave 9/10 fixed and 8/10 real. Case 10 failed because the context only had the classes the test touches; adding the `src/main` classes those suspects use fixed it on the first attempt, with no other case getting worse. Both runs are in [bench/results](bench/results). (The time also dropped, but part of that is the model already being loaded, so I would not credit the change for it.)
 
@@ -61,6 +61,20 @@ The first run gave 9/10 fixed and 8/10 real. Case 10 failed because the context 
 | 10 | bug in `TaxTable`, but the test only uses `Invoice` | real fix (was not fixed before the context change) |
 
 Full table, timings and every diff: [bench/results/qwen3-coder_30b.md](bench/results/qwen3-coder_30b.md).
+
+### A small model, like on a free GitHub runner
+
+GitHub's free runners have no GPU and 16 GB of RAM, so `qwen3-coder:30b` does not fit. To know if a free CI version is worth it, I ran `qwen2.5-coder:7b` with the GPU off and 4 threads (`-Daifix.numGpu=0 -Daifix.numThread=4`), the same as the runner:
+
+| | First run | After the fix below |
+|---|---|---|
+| Fixed (visible tests) | 2/10 | **8/10** |
+| Real fixes (hidden tests too) | 2/10 | **6/10** |
+| Model time per bug | 63 s | 31 s |
+
+The first run looked like "the small model can't do it". The transcript said otherwise: on the paginator it wrote the right fix (`from + size`), but as the whole class instead of SEARCH/REPLACE blocks, and the plugin threw it away without testing it. Worse, the feedback told it to "try a different fix". Now, when there are no SEARCH/REPLACE blocks, a complete class for an existing `src/main/java` file is applied as a whole (same rules: tests off limits, all tests must pass or it is reverted), and a format error asks to repeat the same fix in the right format. The big model's score did not change.
+
+Every run now writes the whole conversation with the model to `target/ai-fix-transcript.md`.
 
 ## What's unfinished
 

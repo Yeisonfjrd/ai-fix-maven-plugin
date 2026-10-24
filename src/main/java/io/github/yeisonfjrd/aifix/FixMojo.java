@@ -59,6 +59,7 @@ public class FixMojo extends AbstractMojo {
                     getLog()::info);
             FixLoop.Outcome outcome = loop.run();
             writeReport(dir, outcome);
+            java.nio.file.Files.writeString(dir.resolve("target/ai-fix-transcript.md"), loop.transcript(), java.nio.charset.StandardCharsets.UTF_8);
             switch (outcome.status()) {
                 case NOTHING_TO_FIX -> {}
                 case FIXED -> {

@@ -41,6 +41,50 @@ class EditTest {
     }
 
     @Test
+    void planB_laClaseCompletaSeUbicaPorPaqueteYNombre() {
+        String answer = """
+                The page drops its last item.
+
+                ```java
+                package bench;
+
+                import java.util.List;
+
+                public final class Paginator {
+                    int to(int from, int size) { return from + size; }
+                }
+                ```
+
+                ```java
+                package bench;
+
+                class PaginatorTest {}
+                ```
+
+                ```java
+                int sinPaquete = 1;
+                ```
+                """;
+        List<Edit> edits = Edit.parseWholeFiles(answer);
+        assertThat(edits).extracting(Edit::path)
+                .containsExactly("src/main/java/bench/Paginator.java", "src/main/java/bench/PaginatorTest.java");
+        assertThat(edits.get(0).wholeFile()).isTrue();
+        assertThat(edits.get(0).replace()).startsWith("package bench;").endsWith("}\n");
+    }
+
+    @Test
+    void planB_reemplazaElArchivoEnteroRespetandoCrlf() throws Exception {
+        Path file = write("src/main/java/bench/A.java", "package bench;\r\nclass A { int x = 1; }\r\n");
+        EditApplier applier = new EditApplier(dir);
+        assertThat(applier.isEditable("src/main/java/bench/A.java")).isTrue();
+        assertThat(applier.isEditable("src/main/java/bench/ATest.java")).isFalse();
+        applier.apply(List.of(new Edit("src/main/java/bench/A.java", null, "package bench;\nclass A { int x = 2; }\n")));
+        assertThat(Files.readString(file)).isEqualTo("package bench;\r\nclass A { int x = 2; }\r\n");
+        applier.revert();
+        assertThat(Files.readString(file)).contains("x = 1");
+    }
+
+    @Test
     void unReplaceVacioBorraLasLineas() {
         List<Edit> edits = Edit.parseAll("FILE: src/main/java/A.java\n<<<<<<< SEARCH\nlog();\n=======\n>>>>>>> REPLACE\n");
         assertThat(edits.get(0).replace()).isEmpty();

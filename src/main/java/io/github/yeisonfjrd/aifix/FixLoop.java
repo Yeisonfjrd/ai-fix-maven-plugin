@@ -58,6 +58,18 @@ public final class FixLoop {
         this.log = log;
     }
 
+    /** La conversación con el modelo, para guardarla y ver qué respondió en cada intento. */
+    private final List<OllamaClient.Message> messages = new ArrayList<>();
+
+    /** La conversación entera en Markdown: qué se le mandó al modelo y qué contestó. */
+    public String transcript() {
+        StringBuilder sb = new StringBuilder("# ai-fix transcript\n\n");
+        for (OllamaClient.Message m : messages) {
+            sb.append("## ").append(m.role()).append("\n\n").append(m.content().strip()).append("\n\n");
+        }
+        return sb.toString();
+    }
+
     public Outcome run() throws IOException, InterruptedException {
         Duration modelTime = Duration.ZERO;
         Duration testTime = Duration.ZERO;
@@ -77,7 +89,7 @@ public final class FixLoop {
         List<String> selectors = failing.stream().map(TestFailure::selector).distinct().toList();
         log.accept("Fallan " + failing.size() + " test(s): " + String.join(", ", selectors));
 
-        List<OllamaClient.Message> messages = new ArrayList<>();
+        messages.clear();
         messages.add(new OllamaClient.Message("system", SYSTEM));
         messages.add(new OllamaClient.Message("user", context.render(failing)));
 
@@ -89,8 +101,15 @@ public final class FixLoop {
             log.accept("  el modelo respondió en " + seconds(reply.took()) + ": " + firstLine(reply.content()));
 
             String feedback;
+            String retry = "Try a different fix.";
             try {
-                applier.apply(Edit.parseAll(reply.content()));
+                List<Edit> edits = edits(reply.content());
+                if (edits.isEmpty()) {
+                    // No es un arreglo malo: es que no vino en un formato aplicable. Que lo repita bien.
+                    retry = "Keep your fix if you think it is right, but answer again using the FILE / SEARCH / REPLACE format exactly.";
+                    throw new EditApplier.Rejected("I found no FILE/SEARCH/REPLACE block and no complete class I could apply.");
+                }
+                applier.apply(edits);
                 TestRunner.Result result = runner.run(selectors);
                 testTime = testTime.plus(result.took());
                 if (result.passed()) {
@@ -111,10 +130,22 @@ public final class FixLoop {
             }
             applier.revert();
             messages.add(new OllamaClient.Message("user", feedback
-                    + "\n\nI reverted your change, so the files are back to the original code shown before. Try a different fix."));
+                    + "\n\nI reverted your change, so the files are back to the original code shown before. " + retry));
         }
         log.accept("No encontré un arreglo en " + maxAttempts + " intentos. Dejé todo como estaba.");
         return new Outcome(Status.NOT_FIXED, maxAttempts, "", modelTime, testTime);
+    }
+
+    /**
+     * Los bloques SEARCH/REPLACE; si no hay, plan B: las clases completas que vinieron en bloques ```java,
+     * solo las que ya existen en src/main/java (si el modelo repite el test, ese bloque se ignora).
+     */
+    List<Edit> edits(String answer) {
+        List<Edit> edits = Edit.parseAll(answer);
+        if (!edits.isEmpty()) return edits;
+        List<Edit> whole = Edit.parseWholeFiles(answer).stream().filter(e -> applier.isEditable(e.path())).toList();
+        if (!whole.isEmpty()) log.accept("  vino la clase completa en vez de SEARCH/REPLACE: la uso entera");
+        return whole;
     }
 
     private static String describe(TestRunner.Result result) {

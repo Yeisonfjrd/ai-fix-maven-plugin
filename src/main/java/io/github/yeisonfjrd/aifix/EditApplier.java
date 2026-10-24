@@ -56,9 +56,23 @@ public final class EditApplier {
         return file;
     }
 
+    /** true si se puede cambiar ese archivo (existe, es .java y está en src/main/java). */
+    public boolean isEditable(String path) {
+        try {
+            resolveAllowed(path);
+            return true;
+        } catch (Rejected e) {
+            return false;
+        }
+    }
+
     static String replaceOnce(String content, Edit edit) throws Rejected {
         // El archivo puede tener CRLF (Windows) y el modelo siempre escribe LF: se compara en LF.
         boolean crlf = content.contains("\r\n");
+        if (edit.wholeFile()) {
+            String whole = edit.replace().replace("\r\n", "\n");
+            return crlf ? whole.replace("\n", "\r\n") : whole;
+        }
         String text = crlf ? content.replace("\r\n", "\n") : content;
         String search = edit.search().replace("\r\n", "\n");
         if (search.isBlank()) throw new Rejected(edit.path() + ": el SEARCH está vacío.");
