@@ -13,9 +13,10 @@ finish() {
 # Un PR de ai-fix que falla no se vuelve a pasar por ai-fix: así no entra en un bucle.
 case "$BRANCH" in ai-fix/*) finish SKIPPED "Esta rama la creó ai-fix; no se corre sobre sí misma." ;; esac
 
-if [ -f ./mvnw ]; then MVN=./mvnw; else MVN=mvn; fi
+# "sh ./mvnw" y no "./mvnw": un mvnw commiteado desde Windows suele venir sin permiso de ejecución.
+if [ -f ./mvnw ]; then MVN=(sh ./mvnw); else MVN=(mvn); fi
 mkdir -p target
-"$MVN" -B "$PLUGIN" -Daifix.model="$MODEL" -Daifix.attempts="$ATTEMPTS" 2>&1 | tee target/ai-fix-console.log
+"${MVN[@]}" -B "$PLUGIN" -Daifix.model="$MODEL" -Daifix.attempts="$ATTEMPTS" 2>&1 | tee target/ai-fix-console.log
 
 report=target/ai-fix-report.json
 [ -f "$report" ] || finish ERROR "ai-fix no dejó reporte. Mirá ai-fix-console.log en los artifacts."

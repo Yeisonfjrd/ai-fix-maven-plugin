@@ -64,7 +64,7 @@ runs:
       run: |
         # The action carries the plugin's source: no need to publish it anywhere.
         cd "$GITHUB_ACTION_PATH"
-        ./mvnw -B -q install -DskipTests
+        sh ./mvnw -B -q install -DskipTests
 
     - name: Cache Ollama models
       if: runner.environment == 'github-hosted'

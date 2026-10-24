@@ -62,7 +62,9 @@ public final class TestRunner {
             exe = windows ? "mvn.cmd" : "mvn";
         }
         // En Windows un .cmd no se puede lanzar directo con ProcessBuilder: va por cmd /c.
-        return windows ? List.of("cmd", "/c", exe) : List.of(exe);
+        if (windows) return List.of("cmd", "/c", exe);
+        // El mvnw del proyecto va por sh: si se commiteó desde Windows suele venir sin permiso de ejecución.
+        return exe.equals(wrapper.toString()) ? List.of("sh", exe) : List.of(exe);
     }
 
     static String tail(String text, int max) {
