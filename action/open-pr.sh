@@ -36,6 +36,21 @@ $diff
 - Review it like any other pull request before merging.
 EOF
 
-url=$(gh pr create --base "$base" --head "$branch" --title "ai-fix: fix failing tests on $base" --body-file "$body")
+# Justo después del push, GitHub a veces todavía no ve la rama nueva ("No commits between…"):
+# se reintenta unas veces antes de darse por vencido.
+url=""
+for wait in 3 5 10 15 20; do
+  if url=$(gh pr create --base "$base" --head "$branch" --title "ai-fix: fix failing tests on $base" --body-file "$body" 2>"$RUNNER_TEMP/pr-error.txt"); then
+    break
+  fi
+  echo "GitHub todavía no ve la rama; reintento en ${wait}s ($(head -c 200 "$RUNNER_TEMP/pr-error.txt"))"
+  url=""
+  sleep "$wait"
+done
+if [ -z "$url" ]; then
+  cat "$RUNNER_TEMP/pr-error.txt"
+  echo "::error::No se pudo abrir el PR. El arreglo quedó en la rama $branch."
+  exit 1
+fi
 echo "url=$url" >> "$GITHUB_OUTPUT"
 echo "Pull request: $url" | tee -a "$GITHUB_STEP_SUMMARY"
