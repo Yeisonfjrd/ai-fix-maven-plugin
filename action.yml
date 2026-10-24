@@ -1,5 +1,5 @@
-name: ai-fix
-description: When Java tests fail, ask a local model (Ollama) for a fix to src/main and open a pull request only if every test passes.
+name: ai-fix for Maven
+description: Fix failing Java/Maven tests with a local AI model (Ollama, no API key). Opens a PR only if every test passes.
 author: Yeison Fajardo
 branding:
   icon: tool
@@ -75,7 +75,10 @@ runs:
 
     - name: Start Ollama
       shell: bash
-      run: bash "$GITHUB_ACTION_PATH/action/ollama.sh" "${{ steps.model.outputs.model }}"
+      # Values go through env, never straight into the script: that would allow command injection.
+      env:
+        MODEL: ${{ steps.model.outputs.model }}
+      run: bash "$GITHUB_ACTION_PATH/action/ollama.sh" "$MODEL"
 
     - name: Run ai-fix
       id: fix

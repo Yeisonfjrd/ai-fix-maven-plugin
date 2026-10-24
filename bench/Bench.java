@@ -26,7 +26,7 @@ import java.util.stream.Stream;
  */
 public class Bench {
 
-    static final String PLUGIN = "io.github.yeisonfjrd:ai-fix-maven-plugin:0.1.0-SNAPSHOT:fix";
+    static final String PLUGIN = "io.github.yeisonfjrd:ai-fix-maven-plugin:1.0.0:fix";
     static final Path ROOT = Path.of("bench");
     static final Path WORK = Path.of("target", "bench");
     static final boolean WINDOWS = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
