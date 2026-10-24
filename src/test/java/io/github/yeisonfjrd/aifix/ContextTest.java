@@ -56,6 +56,25 @@ class ContextTest {
     }
 
     @Test
+    void sospechosos_tambienLoQueUsanLosSospechosos() throws Exception {
+        // El test usa Invoice; el bug está en TaxTable, que el test nunca nombra.
+        write("src/main/java/shop/Invoice.java", "package shop; public class Invoice { private final TaxTable taxes = new TaxTable(); }");
+        write("src/main/java/shop/TaxTable.java", "package shop; public class TaxTable { int rate() { return Rounding.HALF; } }");
+        write("src/main/java/shop/Rounding.java", "package shop; public class Rounding { static final int HALF = 5; }");
+        write("src/test/java/shop/InvoiceTest.java", """
+                package shop;
+                class InvoiceTest {
+                    void tax() { new Invoice(); }
+                }
+                """);
+        TestFailure f = new TestFailure("shop.InvoiceTest", "tax", "expected 1050", "AssertionFailedError\n\tat shop.InvoiceTest.tax(InvoiceTest.java:3)");
+        assertThat(new SourceContext(dir).suspects(List.of(f)))
+                .extracting(p -> p.getFileName().toString())
+                // Un solo nivel: Rounding (lo que usa TaxTable) queda afuera para no llenar el contexto.
+                .containsExactly("Invoice.java", "TaxTable.java");
+    }
+
+    @Test
     void elStackTraceSinRuidoDeJUnit() {
         String trace = "AssertionFailedError: x\n\tat org.junit.jupiter.api.Assertions.fail(A.java:1)\n\tat shop.CartTest.t(CartTest.java:5)\n\tat java.base/java.lang.reflect.Method.invoke(Method.java:580)";
         assertThat(SourceContext.trimTrace(trace)).isEqualTo("AssertionFailedError: x\n\tat shop.CartTest.t(CartTest.java:5)");

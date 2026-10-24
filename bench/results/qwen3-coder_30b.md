@@ -1,19 +1,19 @@
 # ai-fix benchmark · qwen3-coder:30b
 
-Run on 2026-10-23. **9/10 fixed** (visible tests green), **8/10 real fixes** (hidden tests green too). Average per case: 41 s in the model, 67 s in total.
+Run on 2026-10-24. **10/10 fixed** (visible tests green), **9/10 real fixes** (hidden tests green too). Average per case: 19 s in the model, 46 s in total.
 
 | Case | Bug | Result | Attempts | Model | Hidden tests | Total |
 |---|---|---|---|---|---|---|
-| 01-paginator | Off-by-one: each page drops its last item. | real fix | 1 | 63 s | 4/4 | 89 s |
-| 02-money-split | Integer division: splitting money loses the remainder cents. | real fix | 1 | 31 s | 4/4 | 60 s |
-| 03-null-nickname | NullPointerException: a user without a nickname breaks the display name. | real fix | 1 | 22 s | 3/3 | 48 s |
-| 04-missing-hashcode | equals without hashCode: equal coordinates are not equal inside a HashSet. | real fix | 2 | 37 s | 2/2 | 62 s |
-| 05-slug | String handling: repeated or surrounding spaces produce double dashes. | **incomplete** | 1 | 21 s | 2/3 | 46 s |
-| 06-age | Dates: age counts a year before the birthday has happened. | real fix | 1 | 26 s | 3/3 | 53 s |
-| 07-shared-counter | Shared state: a static field makes every counter share one count. | real fix | 1 | 22 s | 2/2 | 49 s |
-| 08-remove-while-iterating | Collections: removing by index while looping skips the next element. | real fix | 1 | 29 s | 3/3 | 57 s |
-| 09-version-compare | Comparison: versions compared as text put 1.10 before 1.9. | real fix | 1 | 32 s | 4/4 | 59 s |
-| 10-tax-category-case | Bug in another class: the tax table is case-sensitive, the test only uses Invoice. | not fixed | 3 | 121 s | - | 149 s |
+| 01-paginator | Off-by-one: each page drops its last item. | real fix | 1 | 54 s | 4/4 | 81 s |
+| 02-money-split | Integer division: splitting money loses the remainder cents. | real fix | 1 | 18 s | 4/4 | 47 s |
+| 03-null-nickname | NullPointerException: a user without a nickname breaks the display name. | real fix | 1 | 12 s | 3/3 | 38 s |
+| 04-missing-hashcode | equals without hashCode: equal coordinates are not equal inside a HashSet. | real fix | 2 | 21 s | 2/2 | 46 s |
+| 05-slug | String handling: repeated or surrounding spaces produce double dashes. | **incomplete** | 1 | 11 s | 2/3 | 37 s |
+| 06-age | Dates: age counts a year before the birthday has happened. | real fix | 1 | 15 s | 3/3 | 40 s |
+| 07-shared-counter | Shared state: a static field makes every counter share one count. | real fix | 1 | 10 s | 2/2 | 36 s |
+| 08-remove-while-iterating | Collections: removing by index while looping skips the next element. | real fix | 1 | 13 s | 3/3 | 40 s |
+| 09-version-compare | Comparison: versions compared as text put 1.10 before 1.9. | real fix | 1 | 22 s | 4/4 | 51 s |
+| 10-tax-category-case | Bug in another class: the tax table is case-sensitive, the test only uses Invoice. | real fix | 1 | 10 s | 3/3 | 44 s |
 
 ## Diffs
 
@@ -79,7 +79,7 @@ Run on 2026-10-23. **9/10 fixed** (visible tests green), **8/10 real fixes** (hi
 +
 +    @Override
 +    public int hashCode() {
-+        return 31 * x + y;
++        return Integer.hashCode(x) * 31 + Integer.hashCode(y);
 +    }
  }
 ```
@@ -176,6 +176,21 @@ Run on 2026-10-23. **9/10 fixed** (visible tests green), **8/10 real fixes** (hi
 +        }
 +        
 +        return 0;
+     }
+ }
+```
+
+### 10-tax-category-case
+
+```diff
+--- a/src/main/java/bench/TaxTable.java
++++ b/src/main/java/bench/TaxTable.java
+@@ -10,6 +10,6 @@
+     private static final Map<String, Integer> RATES = Map.of("FOOD", 105, "BOOKS", 0, "ELECTRONICS", 210);
+ 
+     public int perMille(String category) {
+-        return RATES.getOrDefault(category, GENERAL);
++        return RATES.getOrDefault(category.toUpperCase(Locale.ROOT), GENERAL);
      }
  }
 ```

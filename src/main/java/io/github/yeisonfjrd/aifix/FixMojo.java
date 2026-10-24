@@ -33,6 +33,14 @@ public class FixMojo extends AbstractMojo {
     @Parameter(property = "aifix.attempts", defaultValue = "3")
     private int attempts;
 
+    /** Capas del modelo en la placa de video (0 = todo en el procesador). Vacío: lo decide Ollama. */
+    @Parameter(property = "aifix.numGpu")
+    private Integer numGpu;
+
+    /** Núcleos del procesador para el modelo. Vacío: lo decide Ollama. */
+    @Parameter(property = "aifix.numThread")
+    private Integer numThread;
+
     /** Muestra el arreglo pero deja el código como estaba. */
     @Parameter(property = "aifix.dryRun", defaultValue = "false")
     private boolean dryRun;
@@ -44,7 +52,7 @@ public class FixMojo extends AbstractMojo {
         try {
             FixLoop loop = new FixLoop(
                     new TestRunner(dir, mavenHome),
-                    new OllamaClient(ollamaUrl, model),
+                    new OllamaClient(ollamaUrl, model, numGpu, numThread),
                     applier,
                     new SourceContext(dir),
                     Math.max(1, attempts),
