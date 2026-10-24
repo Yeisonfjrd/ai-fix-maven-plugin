@@ -37,6 +37,30 @@ Needs [Ollama](https://ollama.com) running with the model pulled (`ollama pull q
 
 Options: `-Daifix.model=qwen3:14b`, `-Daifix.attempts=3`, `-Daifix.dryRun=true` (show the fix, keep the code), `-Daifix.ollamaUrl=...`.
 
+## GitHub Action
+
+Nobody remembers to run a fix command, so the same loop also runs in CI. When the tests fail, the action runs ai-fix and, only if **every** test passes with the change, opens a pull request against the branch that failed. It never pushes to that branch, never runs on its own `ai-fix/*` branches, and skips pull requests from forks.
+
+```yaml
+  ai-fix:
+    needs: test
+    if: failure() && !startsWith(github.head_ref || github.ref_name, 'ai-fix/')
+    # Private repo: your own machine. Public repo: a free GitHub runner.
+    runs-on: ${{ github.event.repository.private && 'self-hosted' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: Yeisonfjrd/ai-fix-maven-plugin@main
+```
+
+Full workflow: [examples/workflows/ci-with-ai-fix.yml](examples/workflows/ci-with-ai-fix.yml).
+
+- **Where the model runs.** On a GitHub-hosted runner (no GPU, 16 GB) the action installs Ollama, caches the model and uses `qwen2.5-coder:7b` on the CPU (6/10 real fixes in the benchmark). On a self-hosted runner it uses the Ollama already running on that machine and `qwen3-coder:30b` (9/10). `model:` overrides it.
+- **No publishing needed.** The action carries the plugin's source and installs it on the runner.
+- **Every run keeps the transcript, the JSON report and the console log as artifacts**, and writes the result and the diff to the job summary.
+- The repository needs *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests*. Pull requests opened with the default `GITHUB_TOKEN` do not trigger other workflows; pass a fine-grained token as `token:` if you want CI to run on them.
+
 ## Benchmark
 
 10 small Java bugs, each with **visible tests** (the ones that fail and the model sees) and **hidden tests** the model never sees. A fix only counts as real if the hidden tests pass too, so a fix tuned to the visible test does not count. `java bench/Bench.java --check` verifies the benchmark itself: the buggy code fails the visible tests and the reference fix passes both.

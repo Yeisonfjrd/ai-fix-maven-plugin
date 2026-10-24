@@ -2,3 +2,4 @@
 /examples/*/mvnw text eol=lf
 *.cmd text eol=crlf
 /bench/template/mvnw text eol=lf
+/action/*.sh text eol=lf
