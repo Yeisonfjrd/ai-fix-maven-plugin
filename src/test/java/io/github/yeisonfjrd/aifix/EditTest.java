@@ -121,6 +121,42 @@ class EditTest {
     }
 
     @Test
+    void unSearchSinSangriaSeEncuentraYElReplaceSeAlinea() throws Exception {
+        // Así respondió qwen2.5-coder:7b en el caso 03 del benchmark: el arreglo bien, la sangría no.
+        Path file = write("src/main/java/bench/Names.java", """
+                class Names {
+                    static String displayName(User user) {
+                        if (user.nickname().isBlank()) {
+                            return user.first() + " " + user.last();
+                        }
+                        return user.nickname();
+                    }
+                }
+                """.replace("\n", "\r\n"));
+        new EditApplier(dir).apply(List.of(new Edit("src/main/java/bench/Names.java",
+                "if (user.nickname().isBlank()) {\n    return user.first() + \" \" + user.last();\n}",
+                "if (user.nickname() == null || user.nickname().isBlank()) {\n    return user.first() + \" \" + user.last();\n}")));
+        assertThat(Files.readString(file)).isEqualTo("""
+                class Names {
+                    static String displayName(User user) {
+                        if (user.nickname() == null || user.nickname().isBlank()) {
+                            return user.first() + " " + user.last();
+                        }
+                        return user.nickname();
+                    }
+                }
+                """.replace("\n", "\r\n"));
+    }
+
+    @Test
+    void sinSangriaPeroAmbiguoNoAdivina() throws Exception {
+        write("src/main/java/A.java", "class A {\n    void a() {\n        x++;\n    }\n    void b() {\n        x++;\n    }\n}\n");
+        // "x++;\n}" sin sangría no está tal cual, e ignorando la sangría aparece dos veces.
+        assertThatThrownBy(() -> new EditApplier(dir).apply(List.of(new Edit("src/main/java/A.java", "x++;\n}", "x--;\n}"))))
+                .isInstanceOf(EditApplier.Rejected.class).hasMessageContaining("no encontré");
+    }
+
+    @Test
     void elSearchTieneQueAparecerUnaSolaVez() throws Exception {
         write("src/main/java/A.java", "x = 1;\nx = 1;\n");
         EditApplier applier = new EditApplier(dir);
