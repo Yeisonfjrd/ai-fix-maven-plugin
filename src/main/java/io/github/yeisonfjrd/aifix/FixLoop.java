@@ -8,7 +8,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -18,9 +22,23 @@ import java.util.function.Consumer;
  */
 public final class FixLoop {
 
-    public enum Status { NOTHING_TO_FIX, FIXED, NOT_FIXED, DOES_NOT_COMPILE }
+    /** FLAKY: los tests fallaron una vez y pasaron solos al repetirlos. Eso no se arregla en el código. */
+    public enum Status { NOTHING_TO_FIX, FIXED, NOT_FIXED, DOES_NOT_COMPILE, FLAKY }
 
-    public record Outcome(Status status, int attempts, String diff, Duration modelTime, Duration testTime) {}
+    /**
+     * `copiedFromTest`: valores del test que quedaron en el arreglo (vacío = ninguno). `review`: qué
+     * pasó en la segunda pasada (OFF, OK, IMPROVED, KEPT_ORIGINAL).
+     */
+    public record Outcome(
+            Status status, int attempts, String diff, Duration modelTime, Duration testTime, List<String> copiedFromTest, Review review) {
+
+        Outcome(Status status, int attempts, String diff, Duration modelTime, Duration testTime) {
+            this(status, attempts, diff, modelTime, testTime, List.of(), Review.OFF);
+        }
+    }
+
+    /** La revisión: con los tests en verde, el modelo relee la regla y mira si su arreglo la cubre entera. */
+    public enum Review { OFF, OK, IMPROVED, KEPT_ORIGINAL }
 
     static final String SYSTEM = """
             You fix bugs in Java code so that failing unit tests pass.
@@ -42,19 +60,38 @@ public final class FixLoop {
             The SEARCH text must appear exactly once in the file. Add surrounding lines if needed to make it unique.
             """;
 
+    // Los tests de un proyecto casi nunca cubren todo: un arreglo puede ponerlos en verde y seguir
+    // incompleto (en el benchmark, el 7B arreglaba los espacios dobles del slug pero no los de las puntas).
+    static final String REVIEW = """
+            All tests pass now. Before I accept it, review your fix against the whole rule, not only the test's example.
+            Read the Javadoc, comments and names of the methods you changed. Think of inputs the tests do not cover
+            (empty or null values, spaces at the ends, boundaries, other cases of the same rule).
+
+            If your fix is complete, answer exactly: OK
+            If some input described by that rule would still be wrong, answer with FILE / SEARCH / REPLACE blocks
+            that change the code as it is now (with your fix already applied).
+            """;
+
     private final TestRunner runner;
     private final OllamaClient model;
     private final EditApplier applier;
     private final SourceContext context;
     private final int maxAttempts;
+    private final boolean review;
     private final Consumer<String> log;
 
     public FixLoop(TestRunner runner, OllamaClient model, EditApplier applier, SourceContext context, int maxAttempts, Consumer<String> log) {
+        this(runner, model, applier, context, maxAttempts, true, log);
+    }
+
+    public FixLoop(
+            TestRunner runner, OllamaClient model, EditApplier applier, SourceContext context, int maxAttempts, boolean review, Consumer<String> log) {
         this.runner = runner;
         this.model = model;
         this.applier = applier;
         this.context = context;
         this.maxAttempts = maxAttempts;
+        this.review = review;
         this.log = log;
     }
 
@@ -89,6 +126,22 @@ public final class FixLoop {
         List<String> selectors = failing.stream().map(TestFailure::selector).distinct().toList();
         log.accept("Fallan " + failing.size() + " test(s): " + String.join(", ", selectors));
 
+        // Un test que falla una vez y pasa la siguiente es inestable (tiempos, orden, red): no hay
+        // bug que arreglar en src/main, y un "arreglo" del modelo sería inventado.
+        log.accept("Repitiendo los que fallan para descartar tests inestables…");
+        TestRunner.Result again = runner.run(selectors);
+        testTime = testTime.plus(again.took());
+        if (again.passed()) {
+            log.accept("Al repetirlos pasaron: son tests inestables, no un bug. No toco el código.");
+            return new Outcome(Status.FLAKY, 0, "", modelTime, testTime);
+        }
+
+        Set<String> testValues = new LinkedHashSet<>();
+        for (TestFailure f : failing) {
+            String method = context.testMethod(f);
+            if (method != null) testValues.addAll(TestLiterals.of(method));
+        }
+
         messages.clear();
         messages.add(new OllamaClient.Message("system", SYSTEM));
         messages.add(new OllamaClient.Message("user", context.render(failing)));
@@ -118,8 +171,26 @@ public final class FixLoop {
                     result = runner.run(List.of());
                     testTime = testTime.plus(result.took());
                     if (result.passed()) {
-                        String diff = diff();
-                        return new Outcome(Status.FIXED, attempt, diff, modelTime, testTime);
+                        List<String> copied = TestLiterals.copiedInto(diff(), testValues);
+                        if (copied.isEmpty() || attempt == maxAttempts) {
+                            if (!copied.isEmpty()) log.accept("  ojo: el arreglo usa valores copiados del test: " + String.join(", ", copied));
+                            Review r = Review.OFF;
+                            if (review && copied.isEmpty()) {
+                                ReviewResult rr = review(testValues);
+                                modelTime = modelTime.plus(rr.modelTime());
+                                testTime = testTime.plus(rr.testTime());
+                                r = rr.review();
+                            }
+                            return new Outcome(Status.FIXED, attempt, diff(), modelTime, testTime, copied, r);
+                        }
+                        // Pasa, pero preguntando por el dato del test: arregla el ejemplo, no la regla.
+                        feedback = "All tests pass, but your change uses values copied from the tests ("
+                                + String.join(", ", copied) + "). That only fixes the example. Fix the general rule instead.";
+                        log.accept("  rechazado: usa valores del test (" + String.join(", ", copied) + ")");
+                        applier.revert();
+                        messages.add(new OllamaClient.Message("user", feedback
+                                + "\n\nI reverted your change, so the files are back to the original code shown before."));
+                        continue;
                     }
                 }
                 feedback = describe(result);
@@ -134,6 +205,45 @@ public final class FixLoop {
         }
         log.accept("No encontré un arreglo en " + maxAttempts + " intentos. Dejé todo como estaba.");
         return new Outcome(Status.NOT_FIXED, maxAttempts, "", modelTime, testTime);
+    }
+
+    private record ReviewResult(Review review, Duration modelTime, Duration testTime) {}
+
+    /**
+     * Segunda pasada. Si el modelo propone algo más, se aplica sobre el arreglo y se queda solo si
+     * todos los tests siguen en verde y no copia valores del test; si no, vuelve el arreglo de antes.
+     */
+    private ReviewResult review(Set<String> testValues) throws IOException, InterruptedException {
+        log.accept("  revisión: ¿el arreglo cubre toda la regla o solo el ejemplo del test?");
+        messages.add(new OllamaClient.Message("user", REVIEW));
+        OllamaClient.Reply reply = model.chat(messages);
+        messages.add(new OllamaClient.Message("assistant", reply.content()));
+        String answer = reply.content().strip();
+        List<Edit> edits = answer.startsWith("OK") ? List.of() : edits(answer);
+        if (edits.isEmpty()) {
+            log.accept("  el modelo dice que el arreglo está completo");
+            return new ReviewResult(Review.OK, reply.took(), Duration.ZERO);
+        }
+        Map<Path, String> before = new HashMap<>();
+        for (Path file : applier.originals().keySet()) before.put(file, Files.readString(file, StandardCharsets.UTF_8));
+        Duration tests = Duration.ZERO;
+        try {
+            applier.apply(edits);
+            TestRunner.Result result = runner.run(List.of());
+            tests = result.took();
+            if (result.passed() && TestLiterals.copiedInto(diff(), testValues).isEmpty()) {
+                log.accept("  la revisión mejoró el arreglo y todos los tests siguen en verde");
+                return new ReviewResult(Review.IMPROVED, reply.took(), tests);
+            }
+            log.accept("  la revisión rompió algo: vuelvo al arreglo anterior");
+        } catch (EditApplier.Rejected e) {
+            log.accept("  la revisión no se pudo aplicar: vuelvo al arreglo anterior");
+        }
+        // Los archivos que tocó solo la revisión vuelven al original; los demás, al arreglo que ya andaba.
+        for (var entry : applier.originals().entrySet()) {
+            Files.writeString(entry.getKey(), before.getOrDefault(entry.getKey(), entry.getValue()), StandardCharsets.UTF_8);
+        }
+        return new ReviewResult(Review.KEPT_ORIGINAL, reply.took(), tests);
     }
 
     /**

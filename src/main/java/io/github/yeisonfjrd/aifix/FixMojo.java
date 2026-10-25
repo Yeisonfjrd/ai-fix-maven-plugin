@@ -41,6 +41,13 @@ public class FixMojo extends AbstractMojo {
     @Parameter(property = "aifix.numThread")
     private Integer numThread;
 
+    /**
+     * Segunda pasada: con los tests en verde, el modelo revisa si su arreglo cubre toda la regla y no
+     * solo el ejemplo del test. Cuesta una respuesta más del modelo.
+     */
+    @Parameter(property = "aifix.review", defaultValue = "true")
+    private boolean review;
+
     /** Muestra el arreglo pero deja el código como estaba. */
     @Parameter(property = "aifix.dryRun", defaultValue = "false")
     private boolean dryRun;
@@ -56,6 +63,7 @@ public class FixMojo extends AbstractMojo {
                     applier,
                     new SourceContext(dir),
                     Math.max(1, attempts),
+                    review,
                     getLog()::info);
             FixLoop.Outcome outcome = loop.run();
             writeReport(dir, outcome);
@@ -68,6 +76,10 @@ public class FixMojo extends AbstractMojo {
                     getLog().info("");
                     getLog().info("Arreglado en " + outcome.attempts() + " intento(s). Modelo: " + FixLoop.seconds(outcome.modelTime())
                             + " · tests: " + FixLoop.seconds(outcome.testTime()));
+                    if (!outcome.copiedFromTest().isEmpty()) {
+                        getLog().warn("El arreglo usa valores copiados del test (" + String.join(", ", outcome.copiedFromTest())
+                                + "): puede arreglar solo el ejemplo y no la regla. Revisalo con cuidado.");
+                    }
                     if (dryRun) {
                         applier.revert();
                         getLog().info("dryRun: no apliqué el cambio.");
@@ -75,6 +87,7 @@ public class FixMojo extends AbstractMojo {
                         getLog().info("El cambio quedó aplicado. Revisalo antes de commitear.");
                     }
                 }
+                case FLAKY -> throw new MojoFailureException("Los tests que fallaron pasaron al repetirlos: son inestables, no hay un bug que arreglar en el código.");
                 case NOT_FIXED -> throw new MojoFailureException("No encontré un arreglo. El código quedó como estaba.");
                 case DOES_NOT_COMPILE -> throw new MojoFailureException("El proyecto no compila.");
             }
@@ -99,6 +112,8 @@ public class FixMojo extends AbstractMojo {
         report.put("attempts", outcome.attempts());
         report.put("modelSeconds", outcome.modelTime().toMillis() / 1000.0);
         report.put("testSeconds", outcome.testTime().toMillis() / 1000.0);
+        report.put("copiedFromTest", outcome.copiedFromTest());
+        report.put("review", outcome.review().name());
         report.put("diff", outcome.diff());
         Path file = dir.resolve("target/ai-fix-report.json");
         java.nio.file.Files.createDirectories(file.getParent());
