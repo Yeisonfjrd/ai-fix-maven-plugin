@@ -21,10 +21,32 @@ git push -q origin "$branch"
 why=$(awk '/^## assistant/{getline; getline; last=$0} END{print last}' target/ai-fix-transcript.md 2>/dev/null || true)
 diff=$(git diff HEAD~1 -- . ':(glob)**/src/main/java/**')
 
+# Lo que dice el reporte: valores copiados del test y qué hizo la revisión.
+report=$(find . -path '*/target/ai-fix-report.json' -print -quit 2>/dev/null || true)
+copied=""
+review=""
+if [ -n "$report" ] && command -v jq >/dev/null; then
+  copied=$(jq -r '.copiedFromTest // [] | join(", ")' "$report")
+  review=$(jq -r '.review // ""' "$report")
+fi
+warning=""
+if [ -n "$copied" ]; then
+  warning="> [!WARNING]
+> The fix uses values copied from the tests ($copied). It may only fix the test's example, not the real rule. Check it carefully.
+"
+fi
+case "$review" in
+  OK) review_line="- After the tests passed, the model reviewed its fix against the whole rule and found nothing missing." ;;
+  IMPROVED) review_line="- After the tests passed, the model reviewed its fix and extended it to cases the tests do not cover. Every test still passes." ;;
+  KEPT_ORIGINAL) review_line="- After the tests passed, the model tried to extend its fix, but that broke something, so the first fix was kept." ;;
+  *) review_line="" ;;
+esac
+
 body=$(mktemp)
 cat > "$body" <<EOF
-Tests were failing on \`$base\`. ai-fix asked \`$MODEL\` for a fix and **every test passes** with this change.
+**This is a proposal, not a verified fix.** Tests were failing on \`$base\`. ai-fix asked \`$MODEL\` for a fix and every test passes with this change. Tests only check what they check: a fix can turn them green and still miss cases they do not cover.
 
+${warning}
 > ${why:-(no explanation)}
 
 \`\`\`diff
@@ -32,6 +54,7 @@ $diff
 \`\`\`
 
 - Only \`src/main/java\` was changed. Tests were not touched.
+${review_line}
 - The full conversation with the model is in the workflow artifacts (\`ai-fix-transcript.md\`).
 - Review it like any other pull request before merging.
 EOF

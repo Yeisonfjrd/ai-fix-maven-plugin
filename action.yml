@@ -14,6 +14,11 @@ inputs:
   attempts:
     description: Attempts before giving up. A failed attempt is reverted before the next one.
     default: "3"
+  review:
+    description: >
+      After the tests pass, ask the model once more whether its fix covers the whole rule and not
+      only the test's example. Costs one more model answer.
+    default: "true"
   java-version:
     description: Java version for the project and the plugin.
     default: "21"
@@ -31,7 +36,7 @@ inputs:
 
 outputs:
   status:
-    description: FIXED, NOT_FIXED, NOTHING_TO_FIX, DOES_NOT_COMPILE or SKIPPED.
+    description: FIXED, NOT_FIXED, NOTHING_TO_FIX, DOES_NOT_COMPILE, FLAKY or SKIPPED.
     value: ${{ steps.fix.outputs.status }}
   pull-request:
     description: URL of the pull request with the fix, if one was opened.
@@ -87,6 +92,7 @@ runs:
       env:
         MODEL: ${{ steps.model.outputs.model }}
         ATTEMPTS: ${{ inputs.attempts }}
+        REVIEW: ${{ inputs.review }}
       run: bash "$GITHUB_ACTION_PATH/action/fix.sh"
 
     - name: Keep the transcript

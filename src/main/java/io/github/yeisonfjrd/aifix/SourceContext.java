@@ -28,6 +28,8 @@ public final class SourceContext {
 
     private static final Pattern FRAME = Pattern.compile("at ([\\w.$]+)\\.[\\w$<>]+\\(");
     private static final int MAX_CHARS = 60_000;
+    // Un diff más grande que esto ya no es una pista: es medio proyecto.
+    private static final int MAX_DIFF_CHARS = 8_000;
 
     private final Path basedir;
     private final Map<String, Path> mainBySimpleName = new HashMap<>();
@@ -99,6 +101,11 @@ public final class SourceContext {
             if (method != null) sb.append("```java\n").append(method).append("\n```\n");
             sb.append("Error:\n```\n").append(trimTrace(f.stackTrace())).append("\n```\n\n");
         }
+        String recent = recentChanges();
+        if (!recent.isBlank()) {
+            sb.append("## Último cambio en src/main (los tests andaban antes de esto, el error puede estar acá)\n\n```diff\n")
+                    .append(recent).append("\n```\n\n");
+        }
         sb.append("## Código de src/main que podría tener el error\n\n");
         for (Path p : suspects(failures)) {
             String code = Files.readString(p, StandardCharsets.UTF_8).replace("\r\n", "\n");
@@ -110,6 +117,37 @@ public final class SourceContext {
             sb.append(block);
         }
         return sb.toString();
+    }
+
+    /**
+     * Lo último que cambió en src/main/java según git: lo que todavía no se commiteó, o si no hay
+     * nada, el último commit (en CI, el push que rompió los tests). Vacío si no es un repo de git o
+     * el diff es muy grande para servir de pista.
+     */
+    String recentChanges() {
+        if (!Files.exists(basedir.resolve(".git"))) return "";
+        String pending = git("diff", "HEAD", "--", "src/main/java");
+        String diff = pending.isBlank() ? git("diff", "HEAD~1", "HEAD", "--", "src/main/java") : pending;
+        return diff.length() > MAX_DIFF_CHARS ? "" : diff.strip();
+    }
+
+    private String git(String... args) {
+        try {
+            List<String> cmd = new java.util.ArrayList<>(List.of("git"));
+            cmd.addAll(List.of(args));
+            Process p = new ProcessBuilder(cmd).directory(basedir.toFile()).redirectErrorStream(false).start();
+            String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            if (!p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return "";
+            }
+            return p.exitValue() == 0 ? out : "";
+        } catch (IOException e) {
+            return "";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
+        }
     }
 
     String testMethod(TestFailure f) {

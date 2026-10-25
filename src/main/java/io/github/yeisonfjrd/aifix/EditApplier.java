@@ -78,6 +78,9 @@ public final class EditApplier {
         if (search.isBlank()) throw new Rejected(edit.path() + ": el SEARCH está vacío.");
         int first = text.indexOf(search);
         if (first < 0) {
+            // Los modelos chicos suelen copiar el código sin la sangría: se busca de nuevo ignorándola.
+            String reindented = replaceIgnoringIndent(text, search, edit.replace().replace("\r\n", "\n"));
+            if (reindented != null) return crlf ? reindented.replace("\n", "\r\n") : reindented;
             throw new Rejected(edit.path() + ": no encontré este SEARCH en el archivo. Copialo exacto, con los mismos espacios:\n" + search);
         }
         if (text.indexOf(search, first + 1) >= 0) {
@@ -85,6 +88,48 @@ public final class EditApplier {
         }
         String result = text.substring(0, first) + edit.replace().replace("\r\n", "\n") + text.substring(first + search.length());
         return crlf ? result.replace("\n", "\r\n") : result;
+    }
+
+    /**
+     * Busca las líneas del SEARCH comparándolas sin los espacios del principio y del final. Si
+     * aparecen en un solo lugar, las reemplaza y corre la sangría del REPLACE lo mismo que estaba
+     * corrido el SEARCH. Si no aparecen, o aparecen en más de un lugar, devuelve null: no adivina.
+     */
+    static String replaceIgnoringIndent(String text, String search, String replace) {
+        String[] lines = text.split("\n", -1);
+        String[] wanted = search.strip().split("\n");
+        int found = -1;
+        for (int i = 0; i + wanted.length <= lines.length; i++) {
+            boolean match = true;
+            for (int k = 0; k < wanted.length && match; k++) {
+                match = lines[i + k].strip().equals(wanted[k].strip());
+            }
+            if (match) {
+                if (found >= 0) return null; // ambiguo
+                found = i;
+            }
+        }
+        if (found < 0) return null;
+
+        String fileIndent = indentOf(lines[found]);
+        String searchIndent = indentOf(wanted[0]);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < found; i++) out.append(lines[i]).append('\n');
+        String[] replacement = replace.isEmpty() ? new String[0] : replace.split("\n", -1);
+        for (String r : replacement) {
+            if (r.isBlank()) out.append('\n');
+            else if (r.startsWith(searchIndent)) out.append(fileIndent).append(r.substring(searchIndent.length())).append('\n');
+            else out.append(fileIndent).append(r.stripLeading()).append('\n');
+        }
+        for (int i = found + wanted.length; i < lines.length; i++) {
+            out.append(lines[i]);
+            if (i < lines.length - 1) out.append('\n');
+        }
+        return out.toString();
+    }
+
+    private static String indentOf(String line) {
+        return line.substring(0, line.length() - line.stripLeading().length());
     }
 
     /** Archivo → contenido original, de todo lo que se cambió hasta ahora. */

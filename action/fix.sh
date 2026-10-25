@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Corre ai-fix en el proyecto y deja el resultado en $GITHUB_OUTPUT (status) y en el resumen del job.
 set -uo pipefail
-PLUGIN="io.github.yeisonfjrd:ai-fix-maven-plugin:1.0.0:fix"
+PLUGIN="io.github.yeisonfjrd:ai-fix-maven-plugin:1.1.0:fix"
 BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
 
 finish() {
@@ -16,7 +16,7 @@ case "$BRANCH" in ai-fix/*) finish SKIPPED "Esta rama la creó ai-fix; no se cor
 # "sh ./mvnw" y no "./mvnw": un mvnw commiteado desde Windows suele venir sin permiso de ejecución.
 if [ -f ./mvnw ]; then MVN=(sh ./mvnw); else MVN=(mvn); fi
 mkdir -p target
-"${MVN[@]}" -B "$PLUGIN" -Daifix.model="$MODEL" -Daifix.attempts="$ATTEMPTS" 2>&1 | tee target/ai-fix-console.log
+"${MVN[@]}" -B "$PLUGIN" -Daifix.model="$MODEL" -Daifix.attempts="$ATTEMPTS" -Daifix.review="${REVIEW:-true}" 2>&1 | tee target/ai-fix-console.log
 
 report=target/ai-fix-report.json
 [ -f "$report" ] || finish ERROR "ai-fix no dejó reporte. Mirá ai-fix-console.log en los artifacts."
@@ -32,6 +32,8 @@ case "$status" in
       "$MODEL" "$attempts" "$model_s" "$(git diff -- . ':(glob)**/src/main/java/**')")" ;;
   NOT_FIXED)
     finish NOT_FIXED "Modelo \`$MODEL\`: no encontró un arreglo en $attempts intento(s). El código quedó como estaba. La conversación completa está en los artifacts (ai-fix-transcript.md)." ;;
+  FLAKY)
+    finish FLAKY "Los tests que fallaron pasaron al repetirlos: son inestables (tiempos, orden, red), no un bug del código. ai-fix no propone nada." ;;
   *)
     finish "$status" "Nada para arreglar con ai-fix ($status)." ;;
 esac

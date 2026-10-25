@@ -26,7 +26,7 @@ import java.util.stream.Stream;
  */
 public class Bench {
 
-    static final String PLUGIN = "io.github.yeisonfjrd:ai-fix-maven-plugin:1.0.0:fix";
+    static final String PLUGIN = "io.github.yeisonfjrd:ai-fix-maven-plugin:1.1.0:fix";
     static final Path ROOT = Path.of("bench");
     static final Path WORK = Path.of("target", "bench");
     static final boolean WINDOWS = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
@@ -34,7 +34,7 @@ public class Bench {
     record Run(int exit, String output, Duration took) {}
 
     record CaseResult(String id, String bug, String status, int attempts, double modelSeconds, boolean real,
-                      int hiddenFailed, int hiddenTotal, Duration wall, String diff) {}
+                      int hiddenFailed, int hiddenTotal, Duration wall, String diff, String review) {}
 
     public static void main(String[] args) throws Exception {
         boolean check = false;
@@ -108,6 +108,8 @@ public class Bench {
         int attempts = (int) number(report, "attempts");
         double modelSeconds = number(report, "modelSeconds");
         String diff = unescape(field(report, "diff", ""));
+        // Qué hizo la segunda pasada: OK (dijo que estaba completo), IMPROVED, KEPT_ORIGINAL u OFF.
+        String review = field(report, "review", "-");
 
         boolean real = false;
         int[] hidden = {0, 0};
@@ -119,7 +121,7 @@ public class Bench {
             hidden = hiddenCounts(work.resolve("target/surefire-reports"));
         }
         Duration wall = Duration.ofNanos(System.nanoTime() - start);
-        return new CaseResult(id, bug, status, attempts, modelSeconds, real, hidden[0], hidden[1], wall, diff);
+        return new CaseResult(id, bug, status, attempts, modelSeconds, real, hidden[0], hidden[1], wall, diff, review);
     }
 
     /** Las opciones -Daifix.* que recibe el benchmark van al plugin (ej: -Daifix.numGpu=0 -Daifix.numThread=4). */
@@ -191,11 +193,11 @@ public class Bench {
         sb.append("Run on ").append(LocalDate.now()).append(". ")
                 .append(String.format(Locale.ROOT, "**%d/%d fixed** (visible tests green), **%d/%d real fixes** (hidden tests green too). ", fixed, results.size(), real, results.size()))
                 .append(String.format(Locale.ROOT, "Average per case: %.0f s in the model, %.0f s in total.%n%n", avgModel, avgWall));
-        sb.append("| Case | Bug | Result | Attempts | Model | Hidden tests | Total |\n|---|---|---|---|---|---|---|\n");
+        sb.append("| Case | Bug | Result | Attempts | Review | Model | Hidden tests | Total |\n|---|---|---|---|---|---|---|---|\n");
         for (CaseResult r : results) {
             String result = r.real() ? "real fix" : r.status().equals("FIXED") ? "**incomplete**" : r.status().toLowerCase(Locale.ROOT).replace('_', ' ');
-            sb.append(String.format(Locale.ROOT, "| %s | %s | %s | %d | %.0f s | %s | %.0f s |%n",
-                    r.id(), r.bug(), result, r.attempts(), r.modelSeconds(),
+            sb.append(String.format(Locale.ROOT, "| %s | %s | %s | %d | %s | %.0f s | %s | %.0f s |%n",
+                    r.id(), r.bug(), result, r.attempts(), r.status().equals("FIXED") ? r.review().toLowerCase(Locale.ROOT).replace('_', ' ') : "-", r.modelSeconds(),
                     r.hiddenTotal() == 0 ? "-" : (r.hiddenTotal() - r.hiddenFailed()) + "/" + r.hiddenTotal(),
                     r.wall().toMillis() / 1000.0));
         }

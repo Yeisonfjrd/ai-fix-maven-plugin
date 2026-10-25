@@ -80,6 +80,28 @@ class ContextTest {
         assertThat(SourceContext.trimTrace(trace)).isEqualTo("AssertionFailedError: x\n\tat shop.CartTest.t(CartTest.java:5)");
     }
 
+    @Test
+    void elUltimoCambioDeGit_primeroLoSinCommitearYSiNoElUltimoCommit() throws Exception {
+        assertThat(new SourceContext(dir).recentChanges()).as("sin git no hay pista").isEmpty();
+        git("init", "-q");
+        write("src/main/java/shop/Cart.java", "package shop;\nclass Cart { int total() { return 1; } }\n");
+        git("add", ".");
+        git("commit", "-q", "-m", "uno");
+        write("src/main/java/shop/Cart.java", "package shop;\nclass Cart { int total() { return 2; } }\n");
+        git("commit", "-q", "-am", "dos");
+        assertThat(new SourceContext(dir).recentChanges()).contains("-class Cart { int total() { return 1; } }").contains("+class Cart { int total() { return 2; } }");
+
+        write("src/main/java/shop/Cart.java", "package shop;\nclass Cart { int total() { return 3; } }\n");
+        assertThat(new SourceContext(dir).recentChanges()).contains("+class Cart { int total() { return 3; } }").doesNotContain("return 1;");
+    }
+
+    private void git(String... args) throws Exception {
+        List<String> cmd = new java.util.ArrayList<>(List.of("git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false"));
+        cmd.addAll(List.of(args));
+        Process p = new ProcessBuilder(cmd).directory(dir.toFile()).inheritIO().start();
+        assertThat(p.waitFor()).isZero();
+    }
+
     private void write(String rel, String content) throws Exception {
         Path p = dir.resolve(rel);
         Files.createDirectories(p.getParent());

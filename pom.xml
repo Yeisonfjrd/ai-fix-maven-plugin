@@ -7,7 +7,7 @@
     <groupId>io.github.yeisonfjrd</groupId>
     <!-- El nombre termina en -maven-plugin para que Maven lo encuentre como "ai-fix:fix". -->
     <artifactId>ai-fix-maven-plugin</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>maven-plugin</packaging>
     <name>ai-fix</name>
     <description>Runs your tests, asks a local model for a fix to src/main, keeps it only if the tests pass.</description>
