@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Corre ai-fix en el proyecto y deja el resultado en $GITHUB_OUTPUT (status) y en el resumen del job.
 set -uo pipefail
-PLUGIN="io.github.yeisonfjrd:ai-fix-maven-plugin:1.0.0:fix"
+PLUGIN="io.github.yeisonfjrd:ai-fix-maven-plugin:1.1.0:fix"
 BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
 
 finish() {
