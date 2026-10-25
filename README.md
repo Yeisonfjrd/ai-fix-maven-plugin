@@ -126,9 +126,13 @@ The cases:
 
 ## What's unfinished
 
-- A fix is only as good as the tests: if they do not cover a case, a green fix can still be incomplete. The review and the copied-values check reduce this, they do not remove it ([#issue-tests]).
-- The dependency walk stops at one level, to keep the prompt small. A bug two calls away from what the test touches is still out of reach.
-- Compilation errors are out of scope: if the project does not compile, it stops.
+Each of these has an issue with the details:
+
+- A fix is only as good as the tests: if they do not cover a case, a green fix can still be incomplete. The review and the copied-values check reduce this, they do not remove it ([#14](https://github.com/Yeisonfjrd/ai-fix-maven-plugin/issues/14)).
+- The 30B model needs a self-hosted runner with a GPU; the free GitHub runner only fits the 7B one ([#11](https://github.com/Yeisonfjrd/ai-fix-maven-plugin/issues/11)).
+- The benchmark has 10 bugs written for it. A benchmark on real bugs (Defects4J) would give a more honest number ([#12](https://github.com/Yeisonfjrd/ai-fix-maven-plugin/issues/12)).
+- Asking for several fixes at once and keeping the best could help the small model, at the cost of time on a CPU ([#13](https://github.com/Yeisonfjrd/ai-fix-maven-plugin/issues/13)).
+- Out of scope for now: compile errors, bugs spread over several files or modules, wrong tests, environment failures ([#15](https://github.com/Yeisonfjrd/ai-fix-maven-plugin/issues/15)). The dependency walk stops at one level, so a bug two calls away from what the test touches is out of reach.
 - On a Windows console the Spanish log can show broken accents, depending on the console code page.
 
 ## License
