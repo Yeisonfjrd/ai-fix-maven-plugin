@@ -23,7 +23,7 @@ public class Cart {
     public long subtotal() {
         long sum = 0;
         for (Item item : items) {
-            sum += item.unitPrice();
+            sum += item.unitPrice() * item.quantity();
         }
         return sum;
     }
